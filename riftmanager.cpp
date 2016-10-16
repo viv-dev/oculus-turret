@@ -156,7 +156,6 @@ void RiftManager::BeginFrame()
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glClearColor(0, 0, 0, 1);
 
-	GetPose();
 	//ovrTrackingState hmdState = ovr_GetTrackingState(session, ovr_GetPredictedDisplayTime(session, 0), ovrTrue);
 	//ovr_CalcEyePoses(hmdState.HeadPose.ThePose, viewOffset, eyeRenderPose);
 }
@@ -218,7 +217,7 @@ void RiftManager::DestroyRift()
 	ovr_Shutdown();
 }
 
-const ovrSizei RiftManager::GetResolution()
+ovrSizei RiftManager::GetResolution()
 {
 	return resolution;
 }
@@ -238,52 +237,15 @@ ovrSizei RiftManager::GetBufferSize()
 }
 
 //float &x, float &y, float &z
-void RiftManager::GetPose()
+void RiftManager::GetPose(float &yaw, float &pitch, float &roll)
 {
 	//Grab the current state of the Headset
 	ovrTrackingState state = ovr_GetTrackingState(session, ovr_GetTimeInSeconds(), ovrFalse);
-	OVR::Posef pose = state.HeadPose.ThePose;
-
-	float yaw, pitch, roll;
-	float digiYaw, digiPitch, digiRoll;
+	OVR::Posef pose = state.HeadPose.ThePose;	
 	pose.Rotation.GetEulerAngles<OVR::Axis_Y, OVR::Axis_X, OVR::Axis_Z>(&yaw, &pitch, &roll);
+}
 
-	/*cout << "Yaw: " << fixed << setprecision(2) << RadToDegree(yaw) <<
-	" Pitch: " << fixed << setprecision(2) << RadToDegree(pitch) <<
-	" Roll: " << fixed << setprecision(2) << RadToDegree(roll) << endl;*/
-
-	std::stringstream ss;
-	std::string message;
-
-	/*if (yaw < 0)
-	{
-	digiYaw = RadToDegree(yaw) + 360.0;
-	}
-	else
-	{
-	digiYaw = RadToDegree(yaw);
-	} */
-
-	digiYaw = OVR::RadToDegree(yaw);
-	digiYaw += 150.0;
-
-	if (digiYaw > 300)
-		digiYaw = 300;
-
-	if (digiYaw < 0)
-		digiYaw = 0;
-
-	digiPitch = OVR::RadToDegree(pitch);
-	digiPitch += 150.0;
-
-
-	digiYaw = round(digiYaw / DEGREES_TO_DIGI);
-	digiPitch = round(digiPitch / DEGREES_TO_DIGI);
-	digiRoll = round(OVR::RadToDegree(roll) / DEGREES_TO_DIGI);
-
-
-	//ss << "^yaw:" << setprecision(4) << RadToDegree(yaw) << "pitch:" << setprecision(4) << RadToDegree(pitch) << "roll:" << setprecision(4) << RadToDegree(roll) << "#";
-	ss << "^" << digiYaw << "," << digiPitch << "#";
-
-	std::cout << ss.str() << std::endl;
+void RiftManager::RecenterPose()
+{
+	ovr_RecenterPose(session);
 }

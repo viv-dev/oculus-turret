@@ -33,10 +33,13 @@ public:
 
 	void DestroyRift();
 
-	const ovrSizei GetResolution();
-	float GetFoV();
+	ovrSizei GetResolution();
 	ovrSizei GetBufferSize();
-	void GetPose();
+	float GetFoV();
+	
+	
+	void GetPose(float &yaw, float &pitch, float &roll);
+	void RecenterPose();
 
 private:
 

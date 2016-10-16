@@ -17,24 +17,40 @@ public:
 	bool ParseConfig();
 	bool CheckResult(XMLError result);
 
-	//static ConfigReader *instance();
+// Config Reader Singleton Instance
+#if (_MSC_VER == 1600) //If using VS2010
+	ConfigReader *ConfigReader::instance()
+	{
+		if (!config_instance)
+			config_instance = new ConfigReader();
 
-	static ConfigReader& instance()
+		return config_instance;
+	}
+#else
+	static ConfigReader& getInstance()
 	{
 		static ConfigReader instance;
 		return instance;
 	}
+#endif
+
+	//Get Serial Values
+	std::string getPort() { return port; }
+	unsigned long getBaudRate() { return baudRate; }
+	unsigned char getParity() { return parity; }
+	unsigned char getStopBits() { return stopBits; }
+	unsigned char getByteSize() { return byteSize; }
+
+	//Get Webcam Values
+	unsigned int getNumWebCams() { return numOfWebCams; }
+	float getFOV() { return baudRate; }
+	float getWidth() { return width; }
+	float getHeight() { return height; }
 
 private:
 
 	bool ParseSerialSettings(XMLElement * serialElement);
 	bool ParseWebcamSettings(XMLElement * webCamElement);
-
-	// Webcam Config
-	unsigned int numOfWebCams;
-	float FOVH;
-	float width;
-	float height;
 
 	// Serial Config
 	std::string port;
@@ -43,6 +59,15 @@ private:
 	unsigned char stopBits;
 	unsigned char byteSize;
 
+	// Webcam Config
+	unsigned int numOfWebCams;
+	float FOVH;
+	float width;
+	float height;
+
 	// ConfigReader Singleton
-	//static ConfigReader *config_instance;
+#if (_MSC_VER == 1600)
+	static ConfigReader *config_instance;
+#endif
+
 };

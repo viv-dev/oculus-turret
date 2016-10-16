@@ -44,7 +44,7 @@ void SerialManager::CloseAndCleanHandle(HANDLE& hHandle)
 	InvalidateHandle(hHandle);
 }
 
-HRESULT SerialManager::Init(string portName, DWORD baudRate, BYTE parity, BYTE byStopBits, BYTE byteSize)
+HRESULT SerialManager::Init(string portName, unsigned long baudRate, unsigned char parity, unsigned char byStopBits, unsigned char byteSize)
 {
 
 	bool isInit = false;
@@ -71,7 +71,6 @@ HRESULT SerialManager::Init(string portName, DWORD baudRate, BYTE parity, BYTE b
 		if (m_comPort == INVALID_HANDLE_VALUE)
 		{
 			cout << "[SerialManager] Failed to open COM Port Reason: " << GetLastError() << endl;
-			//assert(0);
 			return E_FAIL;
 		}
 
@@ -99,9 +98,9 @@ HRESULT SerialManager::Init(string portName, DWORD baudRate, BYTE parity, BYTE b
 		}
 
 		//Configure Serial Communications settings
-		dcb.BaudRate = baudRate;
-		dcb.ByteSize = byteSize;
-		dcb.Parity = parity;
+		dcb.BaudRate = (DWORD)baudRate;
+		dcb.ByteSize = (BYTE)byteSize;
+		dcb.Parity = (BYTE)parity;
 
 		if (byStopBits == 1)
 			dcb.StopBits = ONESTOPBIT;

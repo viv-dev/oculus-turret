@@ -1,4 +1,6 @@
 #include "configreader.h"
+#include <sstream>
+
 
 ConfigReader::ConfigReader()
 {}
@@ -6,23 +8,19 @@ ConfigReader::ConfigReader()
 ConfigReader::~ConfigReader()
 {}
 
-
-/*ConfigReader *ConfigReader::instance()
-{
-	if (!config_instance)
-		config_instance = new ConfigReader();
-
-	return config_instance;
-}*/
-
 bool ConfigReader::ParseConfig()
 {
+	std::string fileName = "./config.xml";
 	XMLDocument config;
-	XMLError result = config.LoadFile("./config.xml");
+	XMLError result = config.LoadFile(fileName.c_str());
 	
 	if (!CheckResult(result))
 	{
-		std::cout << "[ConfigReader] Error: could not open config.xml file!" << std::endl;
+		if(result == XML_ERROR_EMPTY_DOCUMENT)
+			std::cout << "[ConfigReader] Error: xml file empty!" << std::endl;
+		else
+			std::cout << "[ConfigReader] Error: could not open config.xml file!" << std::endl;
+		
 		return false;
 	}
 
@@ -48,7 +46,7 @@ bool ConfigReader::ParseConfig()
 		return false;
 	}
 
-	/*firstElement = rootNode->FirstChildElement("WebCam");
+	firstElement = rootNode->FirstChildElement("WebCam");
 
 	if (firstElement == nullptr)
 	{
@@ -60,7 +58,7 @@ bool ConfigReader::ParseConfig()
 	{
 		std::cout << "[ConfigReader] Error: Failed reading serial config settings" << std::endl;
 		return false;
-	}*/
+	}
 	
 	return true;
 }
@@ -88,34 +86,114 @@ bool ConfigReader::ParseSerialSettings(XMLElement * serialElement)
 	result = configElement->QueryUnsignedText(&config_baud);
 	baudRate = (unsigned long)config_baud;
 
-	//Get Parity
+	if (!CheckResult(result))
+	{
+		std::cout << "[ConfigReader] Error: could not read Baud value!" << std::endl;
+		return false;
+	}
+
+	//Get Parity Value
 	unsigned int config_parity;
 	configElement = serialElement->FirstChildElement("Parity");
 	result = configElement->QueryUnsignedText(&config_parity);
 	parity = (unsigned char)config_parity;
 
-	//Get StopBits
+	if (!CheckResult(result))
+	{
+		std::cout << "[ConfigReader] Error: could not read Parity value!" << std::endl;
+		return false;
+	}
+
+	//Get StopBits Value
 	unsigned int config_bits;
 	configElement = serialElement->FirstChildElement("StopBits");
 	result = configElement->QueryUnsignedText(&config_bits);
 	stopBits = (unsigned char)config_bits;
 
-	//Get StopBits
+	if (!CheckResult(result))
+	{
+		std::cout << "[ConfigReader] Error: could not read StopBits value!" << std::endl;
+		return false;
+	}
+
+	//Get ByteSize Value
 	unsigned int config_byte;
 	configElement = serialElement->FirstChildElement("ByteSize");
 	result = configElement->QueryUnsignedText(&config_byte);
 	byteSize = (unsigned char)config_byte;
 	
+	if (!CheckResult(result))
+	{
+		std::cout << "[ConfigReader] Error: could not read ByteSize value!" << std::endl;
+		return false;
+	}
+
 	std::cout << "[ConfigReader] Serial Settings Read: " << std::endl
 			  << "Port: " << port.c_str() << std::endl
-			  << "Parity: " << parity << std::endl
-			  << "StopBits: " << stopBits << std::endl
-			  << "ByteSize: " << byteSize << std::endl;
+			  << "Baud: " << config_baud << std::endl
+			  << "Parity: " << config_parity << std::endl
+			  << "StopBits: " << config_bits << std::endl
+			  << "ByteSize: " << config_byte << std::endl;
+
+	//std::cout << ss.str() << std::endl;
+
+	return true;
 }
 
 bool ConfigReader::ParseWebcamSettings(XMLElement * webCamElement)
 {
+	XMLError result;
 
+	// Get Serial Port Value
+	XMLElement * configElement = webCamElement->FirstChildElement("WebCam");
+
+	//Get NumOfWebCams Value
+	configElement = webCamElement->FirstChildElement("NumOfWebCams");
+	result = configElement->QueryUnsignedText(&numOfWebCams);
+
+	if (!CheckResult(result))
+	{
+		std::cout << "[ConfigReader] Error: could not read NumOfWebCams value!" << std::endl;
+		return false;
+	}
+
+	//Get FOVH Value
+	configElement = webCamElement->FirstChildElement("FOVH");
+	result = configElement->QueryFloatText(&FOVH);
+
+	if (!CheckResult(result))
+	{
+		std::cout << "[ConfigReader] Error: could not read FOVH value!" << std::endl;
+		return false;
+	}
+
+	//Get FOVH Value
+	configElement = webCamElement->FirstChildElement("MaxHeight");
+	result = configElement->QueryFloatText(&height);
+
+	if (!CheckResult(result))
+	{
+		std::cout << "[ConfigReader] Error: could not read MaxHeight value!" << std::endl;
+		return false;
+	}
+
+	//Get FOVH Value
+	configElement = webCamElement->FirstChildElement("MaxWidth");
+	result = configElement->QueryFloatText(&width);
+
+	if (!CheckResult(result))
+	{
+		std::cout << "[ConfigReader] Error: could not read MaxWidth value!" << std::endl;
+		return false;
+	}
+
+	std::cout << "[ConfigReader] Webcam Settings Read: " << std::endl
+		<< "NumOfWebCams: " << numOfWebCams << std::endl
+		<< "FOVH: " << FOVH << std::endl
+		<< "Width: " << width << std::endl
+		<< "Height: " << height << std::endl;
+
+	return true;
 }
 
 bool ConfigReader::CheckResult(XMLError result)

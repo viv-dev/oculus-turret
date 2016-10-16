@@ -12,7 +12,6 @@
 #include <glfw3.h>
 #include <glm.hpp>
 
-#include "main.h"
 #include "serialmanager.h"
 #include "webcamhandler.h"
 #include "riftmanager.h"
@@ -21,27 +20,45 @@
 
 #define DEGREES_TO_DIGI 0.2929
 
+//C++98 standard library does not have a round function, this is a workaround for VS2010
+#if (_MSC_VER == 1600)
+float round(float number)
+{
+	return number < 0.0 ? ceil(number - 0.5) : floor(number + 0.5);
+}
+
+double round(double number)
+{
+	return number < 0.0 ? ceil(number - 0.5) : floor(number + 0.5);
+}
+#endif
+
 using namespace OVR;
 using namespace std;
 
 SerialManager m_serialManager;
 RiftManager riftManager;
-
-unsigned __stdcall sendPosition(void* param)
-{
-	return 0;
-}
+ConfigReader configReader = ConfigReader::getInstance();
 
 bool initSerial()
 {
-	m_serialManager.Init("\\\\.\\COM5", 9600, 0, 1, 8);
+	m_serialManager.Init("\\\\.\\COM5",
+						 configReader.getBaudRate(),
+						 configReader.getParity(),
+						 configReader.getStopBits(),
+						 configReader.getByteSize());
+
 	m_serialManager.Start();
+	return true;
 }
 
 
 void run(void)
 {
-	ConfigReader::instance().ParseConfig();
+
+	configReader.ParseConfig();
+	initSerial();
+
 
 	ovrResult result = ovr_Initialize(nullptr);
 	if (OVR_FAILURE(result))
@@ -75,8 +92,6 @@ void run(void)
 	getchar();
 
 	ovr_RecenterPose(session);
-
-	initSerial();
 
 	while (!isEnd)
 	{
@@ -147,8 +162,10 @@ void run(void)
 
 int main(int argc, char ** argv)
 {
+	configReader.ParseConfig();
+	initSerial();
 
-/*	//Initialise the SDK
+	//Initialise the SDK
 	if (!riftManager.InitRift())
 	{
 		cout << "[MainThread] ERROR: Failed to initialise Oculus SDK. Press any key to end." << endl;
@@ -184,6 +201,10 @@ int main(int argc, char ** argv)
 	
 	//Initialise display buffers for verticies and textures
 	display.InitRender(ovrFov, ovrBufferSize);
+
+	cout << endl << endl << "[MainThread] Please put on the Oculus Headset, face the desired direction, and press any button to begin headtracking." << endl;
+	getchar();
+	riftManager.RecenterPose();
 
 	//string startMsg = "^start#";
 	//m_serialManager.Write(startMsg.c_str(), startMsg.size());
@@ -221,26 +242,50 @@ int main(int argc, char ** argv)
 
 		//Update glfw window
 		glfwSwapBuffers(display.GetWindow());
+
+		float yaw, pitch, roll;
+		float digiYaw, digiPitch, digiRoll;
+
+		riftManager.GetPose(yaw, pitch, roll);
+
+		std::stringstream ss;
+		string message;
+		string recieve;
+
+		digiYaw = RadToDegree(yaw);
+		digiYaw += 150.0;
+
+		if (digiYaw > 300)
+			digiYaw = 300;
+
+		if (digiYaw < 0)
+			digiYaw = 0;
+
+		digiPitch = RadToDegree(pitch);
+		digiPitch += 150.0;
+
+
+		digiYaw = round(digiYaw / DEGREES_TO_DIGI);
+		digiPitch = round(digiPitch / DEGREES_TO_DIGI);
+		digiRoll = round(RadToDegree(roll) / DEGREES_TO_DIGI);
+
+
+		//ss << "^yaw:" << setprecision(4) << RadToDegree(yaw) << "pitch:" << setprecision(4) << RadToDegree(pitch) << "roll:" << setprecision(4) << RadToDegree(roll) << "#";
+		ss << "^" << digiYaw << "," << digiPitch << "#";
+		message = ss.str();
+
+		m_serialManager.Write(message.c_str(), message.size());
+
+		m_serialManager.ReadAvailable(recieve);
+		cout << recieve;
 	}
 
 	// Gracefully terminate program
 	riftManager.DestroyRift();
-	glfwTerminate(); */
+	glfwTerminate(); 
 
 	run();
 
 	return 0;
 }
 
-//C++98 standard library does not have a round function, this is a workaround for VS2010
-
-/*
-float round(float number)
-{
-	return number < 0.0 ? ceil(number-0.5) : floor(number+0.5);
-}
-
-double round(double number)
-{
-	return number < 0.0 ? ceil(number-0.5) : floor(number+0.5);
-}*/

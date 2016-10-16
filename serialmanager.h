@@ -72,7 +72,7 @@ public:
 	HRESULT         Read_Upto(string& data, char delimiter, long* n, long timeOut);  //Reads upto n characters from the serial buffer
 	HRESULT         ReadAvailable(string& data);                                     //Reads all available characters in the serial buffer
 	HRESULT         Write(const char* data, DWORD size);                             //Writes data to the serial port
-	HRESULT         Init(string portName, DWORD baudRate, BYTE parity, BYTE stopBits, BYTE byteSize); //Can be used with default arguments
+	HRESULT         Init(string portName, unsigned long baudRate, unsigned char parity, unsigned char stopBits, unsigned char byteSize); //Can be used with default arguments
 	HRESULT         Start();
 	HRESULT         Stop();
 	HRESULT         UnInit();
