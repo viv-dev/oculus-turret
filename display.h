@@ -6,7 +6,7 @@
 #include <glfw3.h>
 #include <glm.hpp>
 
-#include "webcamhandler.h"
+#include "webcammanager.h"
 #include "texture.h"
 #include "shader.h"
 
@@ -17,9 +17,9 @@ public:
 	~Display();
 
 	bool OnRender(unsigned int eye);
-	void InitRender(float ovrFov, ovrSizei ovrTextSize);
-
+	bool InitRender(float ovrFov, ovrSizei ovrTextSize, float maxWidth, float maxHeight);
 	bool WindowSetup();
+	void Destroy();
 	
 	GLFWwindow* GetWindow(){ return m_window; }
 
@@ -30,15 +30,15 @@ private:
 	//Window Handle
 	GLFWwindow	*m_window;
 
-	//Window Height
-	int m_width;
-	int m_height;
+	//Window Dimensions
+	int windowWidth;
+	int windowHeight;
 
 	GLuint rectangleVAO, rectangleVBO, rectangleEBO;
 	
-	ImageData frame;
+	cv::Mat frame;
 	Texture eyeTextures[2];
 	Shader shader;
 
-	WebcamHandler webcamHandler;
+	WebCamManager webcamManager;
 };

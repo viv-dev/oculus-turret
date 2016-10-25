@@ -59,6 +59,8 @@ bool ConfigReader::ParseConfig()
 		std::cout << "[ConfigReader] Error: Failed reading serial config settings" << std::endl;
 		return false;
 	}
+
+	std::cout << std::endl;
 	
 	return true;
 }
@@ -76,9 +78,10 @@ bool ConfigReader::ParseSerialSettings(XMLElement * serialElement)
 	if (portText == nullptr)
 	{
 		std::cout << "[ConfigReader] Error: Read null serial port value!" << std::endl;
+		return false;
 	}
 
-	std::string port = portText;
+	port = portText;
 
 	//Get Baud Value
 	unsigned int config_baud;
@@ -128,14 +131,13 @@ bool ConfigReader::ParseSerialSettings(XMLElement * serialElement)
 		return false;
 	}
 
-	std::cout << "[ConfigReader] Serial Settings Read: " << std::endl
+	std::cout << std::endl
+		      << "[ConfigReader] Serial Settings Read: " << std::endl
 			  << "Port: " << port.c_str() << std::endl
 			  << "Baud: " << config_baud << std::endl
 			  << "Parity: " << config_parity << std::endl
 			  << "StopBits: " << config_bits << std::endl
 			  << "ByteSize: " << config_byte << std::endl;
-
-	//std::cout << ss.str() << std::endl;
 
 	return true;
 }
@@ -187,7 +189,8 @@ bool ConfigReader::ParseWebcamSettings(XMLElement * webCamElement)
 		return false;
 	}
 
-	std::cout << "[ConfigReader] Webcam Settings Read: " << std::endl
+	std::cout << std::endl
+		<< "[ConfigReader] Webcam Settings Read: " << std::endl
 		<< "NumOfWebCams: " << numOfWebCams << std::endl
 		<< "FOVH: " << FOVH << std::endl
 		<< "Width: " << width << std::endl

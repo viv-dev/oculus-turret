@@ -17,22 +17,12 @@ public:
 	bool ParseConfig();
 	bool CheckResult(XMLError result);
 
-// Config Reader Singleton Instance
-#if (_MSC_VER == 1600) //If using VS2010
-	ConfigReader *ConfigReader::instance()
-	{
-		if (!config_instance)
-			config_instance = new ConfigReader();
-
-		return config_instance;
-	}
-#else
+	// Config Reader Singleton Instance
 	static ConfigReader& getInstance()
 	{
 		static ConfigReader instance;
 		return instance;
 	}
-#endif
 
 	//Get Serial Values
 	std::string getPort() { return port; }
@@ -64,10 +54,5 @@ private:
 	float FOVH;
 	float width;
 	float height;
-
-	// ConfigReader Singleton
-#if (_MSC_VER == 1600)
-	static ConfigReader *config_instance;
-#endif
 
 };

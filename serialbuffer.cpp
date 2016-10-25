@@ -5,6 +5,10 @@
 #include <assert.h>
 #include "SerialBuffer.h"
 
+
+//TO DO - implement a way to clear the string as data is read otu
+//TO DO - stop the 
+
 SerialBuffer::SerialBuffer()
 {
 	Init();
@@ -17,41 +21,120 @@ SerialBuffer::~SerialBuffer()
 
 void SerialBuffer::Init()
 {
-	InitializeCriticalSection(&m_lock);
-
-	m_lockAlways = true;
 	m_currentPos = 0;
 	m_bytesUnRead = 0;
 	m_buffer.erase();
+	InitLock();
 }
 
 void SerialBuffer::AddData(char c)
 {
+	LockBuffer();
+
 	m_buffer += c;
 	m_bytesUnRead += 1;
 
+	UnLockBuffer();
 }
 
-void SerialBuffer::AddData(string& data, int length)
+void SerialBuffer::AddData(string& data, unsigned int length)
 {
+	LockBuffer();
+
 	m_buffer.append(data.c_str(), length);
 	m_bytesUnRead += length;
 
+	UnLockBuffer();
+
 }
 
-void SerialBuffer::AddData(char* strData, int length)
+void SerialBuffer::AddData(char* data, unsigned int length)
 {
-	assert(strData != NULL);
-	m_buffer.append(strData, length);
+	LockBuffer();
+
+	assert(data != NULL);
+	m_buffer.append(data, length);
 	m_bytesUnRead += length;
 
+	UnLockBuffer();
 }
 
 void SerialBuffer::AddData(string& data)
 {
-	m_buffer += data;
-	m_bytesUnRead += data.size();
+	LockBuffer();
 
+	if (m_buffer.size() < MAX_SIZE)
+	{
+		m_buffer += data;
+		m_bytesUnRead += data.size();
+	}
+
+	UnLockBuffer();
+
+}
+
+long SerialBuffer::Read(string& data, unsigned int n)
+{
+	LockBuffer();
+
+	long tempCount = min(n, m_bytesUnRead);
+
+	data.append(m_buffer, m_currentPos, tempCount);
+
+	m_currentPos += tempCount;
+	m_bytesUnRead -= tempCount;
+
+	UnLockBuffer();
+
+	return tempCount;
+}
+
+bool SerialBuffer::Read(string& data)
+{
+	LockBuffer();
+
+	data += m_buffer;
+	Flush();
+	
+	UnLockBuffer();
+
+	return (data.size() > 0);
+}
+
+bool SerialBuffer::Read(string& data, char delimiter, unsigned int& bytesRead)
+{
+	LockBuffer();
+
+	bytesRead = 0;
+	bool found = false;
+
+	if (m_bytesUnRead > 0)
+	{
+
+		int actualSize = m_buffer.size();
+		int incrementPos = 0;
+
+		for (int i = m_currentPos; i < actualSize; ++i)
+		{
+			data += m_buffer[i];
+			m_bytesUnRead -= 1;
+
+			if (m_buffer[i] == delimiter)
+			{
+				incrementPos++;
+				found = true;
+				break;
+			}
+
+			incrementPos++;
+		}
+
+		m_currentPos += incrementPos;
+	}
+
+	UnLockBuffer();
+
+	return found;
 }
 
 void SerialBuffer::Flush()
@@ -63,88 +146,4 @@ void SerialBuffer::Flush()
 	m_currentPos = 0;
 
 	UnLockBuffer();
-}
-
-long SerialBuffer::Read_N(string& data, long n, HANDLE& hEventToReset)
-{
-	assert(hEventToReset != INVALID_HANDLE_VALUE);
-
-	LockBuffer();
-
-	long tempCount = min(n, m_bytesUnRead);
-	long actualSize = GetSize();
-
-	data.append(m_buffer, m_currentPos, tempCount);
-
-	m_currentPos += tempCount;
-	m_bytesUnRead -= tempCount;
-
-	if (m_bytesUnRead == 0)
-		ClearAndReset(hEventToReset);
-
-	UnLockBuffer();
-
-	return tempCount;
-}
-
-bool SerialBuffer::Read_Available(string& data, HANDLE& hEventToReset)
-{
-	LockBuffer();
-
-	data += m_buffer;
-	ClearAndReset(hEventToReset);
-
-	UnLockBuffer();
-
-	return (data.size() > 0);
-}
-
-
-void SerialBuffer::ClearAndReset(HANDLE& hEventToReset)
-{
-	m_buffer.erase();
-	m_bytesUnRead = 0;
-	m_currentPos = 0;
-	::ResetEvent(hEventToReset);
-
-}
-
-bool SerialBuffer::Read_Upto(string& data, char terminate, long& bytesRead, HANDLE& hEventToReset)
-{
-	LockBuffer();
-
-	bytesRead = 0;
-	bool found = false;
-
-	//If there are bytes unread
-	if (m_bytesUnRead > 0)
-	{
-
-		int actualSize = GetSize();
-		int incrementPos = 0;
-
-		for (int i = m_currentPos; i < actualSize; ++i)
-		{
-			data += m_buffer[i];
-			m_bytesUnRead -= 1;
-
-			if (m_buffer[i] == terminate)
-			{
-				incrementPos++;
-				found = true;
-				break;
-			}
-
-			incrementPos++;
-		}
-
-		m_currentPos += incrementPos;
-
-		if (m_bytesUnRead == 0)
-			ClearAndReset(hEventToReset);
-	}
-
-	UnLockBuffer();
-
-	return found;
 }

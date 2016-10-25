@@ -2,36 +2,53 @@
 #include <iostream>
 #include <math.h>
 
-#define CAMERA_HFOV_DEGREES 70.42f
-#define CAMERA_HFOV_RADIANS 1.2290f
+#define CAMERA_HFOV_DEGREES 78.00f
+#define CAMERA_HFOV_RADIANS 1.36136f
+
+void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mode)
+{
+	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+		glfwSetWindowShouldClose(window, GL_TRUE);
+}
 
 Display::Display(int width, int height)
 {
-	m_width = width;
-	m_height = height;
+	windowWidth = width;
+	windowHeight = height;
 }
 
 Display::~Display()
 {
-	glfwDestroyWindow(m_window);
+	if (glIsBuffer(rectangleVBO))
+		glDeleteBuffers(1, &rectangleVBO);
+
+	if (glIsBuffer(rectangleEBO))
+		glDeleteBuffers(1, &rectangleEBO);
+
+	if (glIsVertexArray(rectangleVAO))
+		glDeleteVertexArrays(1, &rectangleVAO);
 }
 
-void Display::InitRender(float ovrFov, ovrSizei ovrBufferSize)
+bool Display::InitRender(float ovrFov, ovrSizei ovrBufferSize, float maxWidth, float maxHeight)
 {
-	//Set the size of the rendering window (doesn't have to match the size of the context window)
-	webcamHandler.startCapture();
-	
-	if(!webcamHandler.getFrame(frame))
+	if (!webcamManager.Init(maxWidth, maxHeight))
 	{
-		std::cout << "[Display] Could not grab webcam frame!" << std::endl;
+		std::cout << "[Display] Failed to initialise webcam!" << std::endl;
+		return false;
 	}
 
-	ovrSizei webcamResolution = webcamHandler.getImageResolution();
+	webcamManager.StartCapture();
 
-	eyeTextures[0].LoadWebcamImage(frame.image.data, webcamResolution.w, webcamResolution.h);
-	eyeTextures[1].LoadWebcamImage(frame.image.data, webcamResolution.w, webcamResolution.h);
+	if (!webcamManager.GetFrame(frame))
+	{
+		std::cout << "[Display] Could not grab webcam frame!" << std::endl;
+		return false;
+	}
 
-	shader.CreateShaderProgram("shaders/rect-textured.vs", "shaders/rect-textured.fs");
+	ovrSizei webcamResolution = webcamManager.GetImageResolution();
+
+	eyeTextures[0].LoadWebcamImage(frame.data, webcamResolution.w, webcamResolution.h);
+	eyeTextures[1].LoadWebcamImage(frame.data, webcamResolution.w, webcamResolution.h);
 
 	std::cout << "ovrFov: " << ovrFov << " ovrBufferSize: " << ovrBufferSize.w << "," << ovrBufferSize.h << std::endl;
 
@@ -46,6 +63,8 @@ void Display::InitRender(float ovrFov, ovrSizei ovrBufferSize)
 
 	std::cout << "widthGL: " << widthGL << " heightGL: " << heightGL << std::endl;
 
+	shader.CreateShaderProgram("shaders/rect-textured.vs", "shaders/rect-textured.fs");
+
 	//Array of verticies that represent the four points of our rectangle
 	GLfloat rectangle_verticies[] =
 	{
@@ -56,15 +75,7 @@ void Display::InitRender(float ovrFov, ovrSizei ovrBufferSize)
 		-widthGL,  heightGL, 0.0f,   1.0f, 1.0f, 0.0f,   0.0f, 1.0f    // Top Left 
 	};
 
-	/*GLfloat rectangle_verticies[] =
-	{
-		// Positions          // Colors           // Texture Coords
-		1.0f,   1.0f, 0.0f,   1.0f, 0.0f, 0.0f,   1.0f, 1.0f,   // Top Right
-		1.0f,  -1.0f, 0.0f,   0.0f, 1.0f, 0.0f,   1.0f, 0.0f,   // Bottom Right
-		-1.0f, -1.0f, 0.0f,   0.0f, 0.0f, 1.0f,   0.0f, 0.0f,   // Bottom Left
-		-1.0f,  1.0f, 0.0f,   1.0f, 1.0f, 0.0f,   0.0f, 1.0f    // Top Left 
-	};*/
-
+	// Index array that provides the order in which to render points
 	GLuint rectangle_indices[] =
 	{
 		0,1,3,	//First triangle
@@ -106,14 +117,18 @@ void Display::InitRender(float ovrFov, ovrSizei ovrBufferSize)
 
 bool Display::OnRender(unsigned int eye)
 {
+	//Activate shader program
 	shader.Use();
 
+	// Bind eye texture
 	if(!eyeTextures[eye].Bind())
 		return false;	
 
-	webcamHandler.getFrame(frame);
-	eyeTextures[eye].Update(frame.image.data);
+	// Update texture with latest webcam frame
+	webcamManager.GetFrame(frame);
+	eyeTextures[eye].Update(frame.data);
 
+	// Bind rendering plane VAO and draw new plane with updated texture
 	glBindVertexArray(rectangleVAO);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 	glBindVertexArray(0);
@@ -142,7 +157,7 @@ bool Display::WindowSetup()
 
 bool Display::OpenWindow()
 {
-	m_window = glfwCreateWindow(m_width, m_height, "OculusTurret", nullptr, nullptr);
+	m_window = glfwCreateWindow(windowWidth, windowHeight, "OculusTurret", nullptr, nullptr);
 
 	if (!m_window)
 	{
@@ -150,6 +165,9 @@ bool Display::OpenWindow()
 		glfwTerminate();
 		false;
 	}
+
+	//Set call back to close winidow on Escape key press
+	glfwSetKeyCallback(m_window, KeyCallback);
 
 	glfwMakeContextCurrent(m_window);
 	glfwSwapInterval(0);
@@ -159,12 +177,18 @@ bool Display::OpenWindow()
 	if (glewInit() != GLEW_OK)
 	{
 		std::cout << "[Display] GLEW failed to initialise" << std::endl;
-		glfwTerminate();
 		return false;
 	}
 
 	return true;
 }
+
+void Display::Destroy()
+{
+	glfwDestroyWindow(m_window);
+	glfwTerminate();
+}
+
 
 
 	/*glfwSetWindowUserPointer(window, this);

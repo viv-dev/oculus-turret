@@ -6,53 +6,69 @@ using namespace std;
 class SerialBuffer
 {
 public:
-	//Critical Section Handling
-	inline void LockBuffer()
-	{
-		::EnterCriticalSection(&m_lock);
-	}
-	inline void UnLockBuffer()
-	{
-		::LeaveCriticalSection(&m_lock);
-	}
 
 	SerialBuffer();
 	virtual ~SerialBuffer();
 
-	//API For Accessing Serial Buffer
+	//Functions
+	void Init();
+
 	void AddData(char ch);
 	void AddData(string& data);
-	void AddData(string& data, int length);
-	void AddData(char* strData, int length);
-	string GetData()
-	{
-		return m_buffer;
-	}
+	void AddData(string& data, unsigned int length);
+	void AddData(char* strData, unsigned int length);
 
-	void        Flush();
-	long        Read_N(string& data, long n, HANDLE& hEventToReset);
-	bool        Read_Upto(string& data, char terminate, long& bytesRead, HANDLE& hEventToReset);
-	bool        Read_Available(string& data, HANDLE& hEventToReset);
-	inline long GetSize()
+	long Read(string& data, unsigned int n);
+	bool Read(string& data, char delimiter, unsigned int& bytesRead);
+	bool Read(string& data);
+
+	void Flush();
+
+	unsigned int GetSize()
 	{
-		return m_buffer.size();
+		LockBuffer();
+		unsigned size = m_buffer.size();
+		UnLockBuffer();
+		return size;
 	}
-	inline bool IsEmpty()
+	
+	bool IsEmpty()
 	{
-		return m_buffer.size() == 0;
+		LockBuffer();
+		bool empty = m_buffer.size() == 0;
+		UnLockBuffer();
+		return empty;
 	}
 
 
 
 private:
+	//Critical Section Handling
+	inline void LockBuffer()
+	{
+		EnterCriticalSection(&m_lock);
+	}
+	inline void UnLockBuffer()
+	{
+		LeaveCriticalSection(&m_lock);
+	}
+	inline void InitLock()
+	{
+		InitializeCriticalSection(&m_lock);
+	}
+	inline void DelLock()
+	{
+		DeleteCriticalSection(&m_lock);
+	}
+
 	//Variables
 	string              m_buffer;
 	CRITICAL_SECTION    m_lock;
-	bool                m_lockAlways;
-	long                m_currentPos;
-	long                m_bytesUnRead;
 
-	//Functions
-	void    Init();
-	void    ClearAndReset(HANDLE& hEventToReset);
+	const unsigned int MAX_SIZE = 256;
+
+	long m_currentPos;
+	long m_bytesUnRead;
+
+
 };

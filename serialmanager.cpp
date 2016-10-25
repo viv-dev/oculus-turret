@@ -1,50 +1,39 @@
 
-
+#include <math.h>
 #include <assert.h>
 #include <Process.h>
 #include <string>
 #include <iostream>
+
+
 #include "SerialManager.h"
 
-SerialManager::SerialManager()
+#define DEGREES_TO_DIGI 0.2929
+
+//C++98 standard library does not have a round function, this is a workaround for VS2010
+#if (_MSC_VER == 1600)
+float round(float number)
 {
-	InvalidateHandle(m_comPort);
-	InvalidateHandle(m_threadTerminate);
-	InvalidateHandle(m_thread);
-	InvalidateHandle(m_threadStarted);
-	InvalidateHandle(m_dataRx);
+	return number < 0.0 ? ceil(number - 0.5) : floor(number + 0.5);
+}
 
-	InitLock();
+double round(double number)
+{
+	return number < 0.0 ? ceil(number - 0.5) : floor(number + 0.5);
+}
+#endif
 
-	m_state = SS_UnInitialised;
+SerialManager::SerialManager() :
+	stopped(false)
+{
 }
 
 SerialManager::~SerialManager()
 {
-	m_state = SS_Unknown;
-	DelLock();
+	UnInit();
 }
 
-void SerialManager::InvalidateHandle(HANDLE& hHandle)
-{
-	hHandle = INVALID_HANDLE_VALUE;
-}
-
-
-void SerialManager::CloseAndCleanHandle(HANDLE& hHandle)
-{
-	BOOL isClosed = CloseHandle(hHandle);
-
-	if (!isClosed)
-	{
-		assert(0);
-		cout << "[SerialManager] Failed to open Close Handle " << hHandle << " :Last Error: " << GetLastError();
-	}
-
-	InvalidateHandle(hHandle);
-}
-
-HRESULT SerialManager::Init(string portName, unsigned long baudRate, unsigned char parity, unsigned char byStopBits, unsigned char byteSize)
+bool SerialManager::Init(string portName, unsigned long baudRate, unsigned char parity, unsigned char byStopBits, unsigned char byteSize)
 {
 
 	bool isInit = false;
@@ -52,308 +41,229 @@ HRESULT SerialManager::Init(string portName, unsigned long baudRate, unsigned ch
 	std::wstring stemp = std::wstring(portName.begin(), portName.end());
 	LPCWSTR winPortName = stemp.c_str();
 
-	try
+	//Open the COM Port
+	comPort = ::CreateFile(winPortName,
+							 GENERIC_READ | GENERIC_WRITE, //access: read and write
+							 0,                          //share: 0 cannot share the COM port
+							 0,                          //security: 0 none
+							 OPEN_EXISTING,              // creation : open_existing
+							 FILE_FLAG_OVERLAPPED,       // overlapped operation to minimise blocking
+							 0                           // templates : 0 none
+	);
+
+	//Check COM port was opened correctly
+	if (comPort == INVALID_HANDLE_VALUE)
 	{
-		//Setup Data Recieve event
-		m_dataRx = CreateEvent(0, 0, 0, 0);
-
-		//Open the COM Port
-		m_comPort = ::CreateFile(winPortName,
-								 GENERIC_READ | GENERIC_WRITE, //access: read and write
-								 0,                          //share: 0 cannot share the COM port
-								 0,                          //security: 0 none
-								 OPEN_EXISTING,              // creation : open_existing
-								 FILE_FLAG_OVERLAPPED,       // overlapped operation to minimise blocking
-								 0                           // templates : 0 none
-								 );
-
-		//Check COM port was opened correctly
-		if (m_comPort == INVALID_HANDLE_VALUE)
-		{
-			cout << "[SerialManager] Failed to open COM Port Reason: " << GetLastError() << endl;
-			return E_FAIL;
-		}
-
-		cout << "[SerialManager] COM port opened successfully" << endl;
-
-		//Set COM event masks - notify when a character is recieved (EV_RXCHAR) and when sending is complete (EV_TXEMPTY)
-		if (!::SetCommMask(m_comPort, EV_RXCHAR | EV_TXEMPTY))
-		{
-			assert(0);
-			cout << "[SerialManager] Failed to Set Comm Mask Reason: " << GetLastError() << endl;
-			return E_FAIL;
-		}
-
-		cout << "[SerialManager] SetCommMask() success" << endl;
-
-		//Create Device Control Block (DCB) to set serial settings
-		DCB dcb = { 0 };
-
-		dcb.DCBlength = sizeof(DCB);
-
-		if (!::GetCommState(m_comPort, &dcb))
-		{
-			cout << "[SerialManager]  Failed to Get Comm State Reason: " << GetLastError() << endl;
-			return E_FAIL;
-		}
-
-		//Configure Serial Communications settings
-		dcb.BaudRate = (DWORD)baudRate;
-		dcb.ByteSize = (BYTE)byteSize;
-		dcb.Parity = (BYTE)parity;
-
-		if (byStopBits == 1)
-			dcb.StopBits = ONESTOPBIT;
-		else if (byStopBits == 2)
-			dcb.StopBits = TWOSTOPBITS;
-		else
-			dcb.StopBits = ONE5STOPBITS;
-
-		dcb.fDsrSensitivity = 0;
-		dcb.fDtrControl = DTR_CONTROL_ENABLE;
-		dcb.fOutxDsrFlow = 0;
-
-		//Send the command to configure and detect if it was successful
-		if (!::SetCommState(m_comPort, &dcb))
-		{
-			assert(0);
-			cout << "[SerialManager]  Failed to Set Comm State Reason: " << GetLastError() << endl;
-			return E_FAIL;
-		}
-
-		//Print Out Configured Settings
-		cout << "[SerialManager] Current Settings:" << endl; 
-		cout <<	"[SerialManager] Baud Rate: " << (int)dcb.BaudRate << endl;
-		cout << "[SerialManager] Parity: " << (int)dcb.Parity << endl;
-		cout << "[SerialManager] Byte Size: " << (int)dcb.ByteSize << endl; 
-		cout << "[SerialManager] Stop Bits: " << ((dcb.StopBits == ONESTOPBIT)?"1": (dcb.StopBits == TWOSTOPBITS)?"2":"1.5") << endl;
-
-		//now set the timeouts ( we control the timeout overselves using WaitForXXX()
-		COMMTIMEOUTS timeouts;
-
-		timeouts.ReadIntervalTimeout = MAXDWORD;
-		timeouts.ReadTotalTimeoutMultiplier = 0;
-		timeouts.ReadTotalTimeoutConstant = 0;
-		timeouts.WriteTotalTimeoutMultiplier = 0;
-		timeouts.WriteTotalTimeoutConstant = 0;
-
-		if (!SetCommTimeouts(m_comPort, &timeouts))
-		{
-			assert(0);
-			cout << "[SerialManager] Error setting time-outs: " << GetLastError() << endl;
-			return E_FAIL;
-		}
-
-		//Create event to start and terminate thread
-		m_threadTerminate = CreateEvent(0, 0, 0, 0);
-		m_threadStarted = CreateEvent(0, 0, 0, 0);
-
-		m_thread = (HANDLE)_beginthreadex(0, 0, SerialManager::ReadThread, (void*)this, 0, 0);
-
-		DWORD wait = WaitForSingleObject(m_threadStarted, INFINITE);
-		assert(wait == WAIT_OBJECT_0);
-
-		CloseHandle(m_threadStarted);
-		InvalidateHandle(m_threadStarted);
-
-		m_isConnected = true;
-		isInit = true;
-
-	}
-	catch (...)
-	{
-		assert(0);
-		isInit = false;
+		cout << "[SerialManager] Failed to open COM Port Reason: " << GetLastError() << endl;
+		return false;
 	}
 
-	if (isInit)
-		m_state = SS_Init;
+	cout << "[SerialManager] COM port opened successfully" << endl;
+
+	//Set COM event masks - notify when a character is recieved (EV_RXCHAR) and when sending is complete (EV_TXEMPTY)
+	if (!::SetCommMask(comPort, EV_RXCHAR | EV_TXEMPTY))
+	{
+		cout << "[SerialManager] Failed to Set Comm Mask Reason: " << GetLastError() << endl;
+		return false;
+	}
+
+	cout << "[SerialManager] SetCommMask() success" << endl;
+
+	//Create Device Control Block (DCB) to set serial settings
+	DCB dcb = { 0 };
+
+	dcb.DCBlength = sizeof(DCB);
+
+	if (!::GetCommState(comPort, &dcb))
+	{
+		cout << "[SerialManager]  Failed to Get Comm State Reason: " << GetLastError() << endl;
+		return false;
+	}
+
+	//Configure Serial Communications settings
+	dcb.BaudRate = (DWORD)baudRate;
+	dcb.ByteSize = (BYTE)byteSize;
+	dcb.Parity = (BYTE)parity;
+
+	if (byStopBits == 1)
+		dcb.StopBits = ONESTOPBIT;
+	else if (byStopBits == 2)
+		dcb.StopBits = TWOSTOPBITS;
+	else
+		dcb.StopBits = ONE5STOPBITS;
+
+	dcb.fDsrSensitivity = 0;
+	dcb.fDtrControl = DTR_CONTROL_ENABLE;
+	dcb.fOutxDsrFlow = 0;
+
+	//Send the command to configure and detect if it was successful
+	if (!::SetCommState(comPort, &dcb))
+	{
+		cout << "[SerialManager]  Failed to Set Comm State Reason: " << GetLastError() << endl;
+		return false;
+	}
+
+	//Print Out Configured Settings
+	cout << "[SerialManager] Current Settings:" << endl;
+	cout << "[SerialManager] Baud Rate: " << (int)dcb.BaudRate << endl;
+	cout << "[SerialManager] Parity: " << (int)dcb.Parity << endl;
+	cout << "[SerialManager] Byte Size: " << (int)dcb.ByteSize << endl;
+	cout << "[SerialManager] Stop Bits: " << ((dcb.StopBits == ONESTOPBIT) ? "1" : (dcb.StopBits == TWOSTOPBITS) ? "2" : "1.5") << endl;
+
+	//now set the timeouts ( we control the timeout overselves using WaitForXXX()
+	COMMTIMEOUTS timeouts;
+
+	timeouts.ReadIntervalTimeout = MAXDWORD;
+	timeouts.ReadTotalTimeoutMultiplier = 0;
+	timeouts.ReadTotalTimeoutConstant = 0;
+	timeouts.WriteTotalTimeoutMultiplier = 0;
+	timeouts.WriteTotalTimeoutConstant = 0;
+
+	if (!SetCommTimeouts(comPort, &timeouts))
+	{
+		cout << "[SerialManager] Error setting time-outs: " << GetLastError() << endl;
+		return false;
+	}
+
+	isConnected = true;
+	isInit = true;
 
 	return isInit;
 
 }
 
 
-HRESULT SerialManager::Start()
+void SerialManager::Start()
 {
-	m_state = SS_Started;
-	return S_OK;
-
-}
-HRESULT SerialManager::Stop()
-{
-	m_state = SS_Stopped;
-	return S_OK;
+	stopped = false;
+	ReadThread = boost::thread(&SerialManager::ReadLoop, this);
 }
 
-HRESULT SerialManager::UnInit()
+void SerialManager::Stop()
 {
-	HRESULT success = S_OK;
-	try
+	if (stopped = false)
 	{
-		m_isConnected = false;
-		SignalObjectAndWait(m_threadTerminate, m_thread, INFINITE, FALSE);
-		CloseAndCleanHandle(m_threadTerminate);
-		CloseAndCleanHandle(m_thread);
-		CloseAndCleanHandle(m_dataRx);
-		CloseAndCleanHandle(m_comPort);
+		stopped = true;
+		ReadThread.join();
 	}
-	catch (...)
+	
+}
+
+void SerialManager::UnInit()
+{
+	Stop();
+	isConnected = false;
+	
+	if (!CloseHandle(comPort))
 	{
 		assert(0);
-		success = E_FAIL;
+		cout << "[SerialManager] Failed to close handle " << comPort << " :Last Error: " << GetLastError();
 	}
-	if (SUCCEEDED(success))
-		m_state = SS_UnInitialised;
-	return success;
+
+	comPort = INVALID_HANDLE_VALUE;
 }
 
-
-unsigned __stdcall SerialManager::ReadThread(void* param)
+/*
+	Since no data is being sent back from the arduino at this point
+	no proper serial read mechanism has been implemented.
+*/
+void SerialManager::ReadLoop()
 {
 
-	SerialManager* This = (SerialManager*)param;
-	bool canContinue = true;
-	DWORD eventMask = 0;
+	OVERLAPPED overlappedRead;
+	memset(&overlappedRead, 0, sizeof(overlappedRead));
+	overlappedRead.hEvent = CreateEvent(NULL, true, FALSE, NULL);
 
-	OVERLAPPED overlapped;
-	memset(&overlapped, 0, sizeof(overlapped));
-	overlapped.hEvent = CreateEvent(0, true, 0, 0);
-
-	HANDLE handles[2];
-	handles[0] = This->m_threadTerminate;
-
-	DWORD wait;
-
-	SetEvent(This->m_threadStarted);
-
-	while (canContinue)
+	if (overlappedRead.hEvent == NULL)
 	{
+		std::cout << "[SerialManager] Error creating overlapped read event!" << std::endl;
+		stopped = true;
+	}
 
-		BOOL readReturn = ::WaitCommEvent(This->m_comPort, &eventMask, &overlapped);
+	while (!stopped)
+	{
+		DWORD waitResult;
+		DWORD eventMask;
 
-		if (!readReturn)
+
+		bool packetStarted = false;
+		bool packetComplete = false;
+		
+		unsigned int bufferPointer = 0;
+		std::string serialBuffer;
+		std::string receivedPacket;
+
+		//Wait for a communications event on the com port
+		if (!WaitCommEvent(comPort, &eventMask, &overlappedRead))
 			assert(GetLastError() == ERROR_IO_PENDING);
 
-		handles[1] = overlapped.hEvent;
+		waitResult = WaitForSingleObject(overlappedRead.hEvent, INFINITE);
 
-		//Wait until a serial event has been detected or 
-		wait = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
-
-		switch (wait)
+		switch (waitResult)
 		{
 			case WAIT_OBJECT_0:
 			{
-				_endthreadex(1);
-			}
-			break;
-			case WAIT_OBJECT_0 + 1:
-			{
-				DWORD mask;
 
-				if (GetCommMask(This->m_comPort, &mask))
+				DWORD bytesRead = 0;
+				bool readReturn = false;
+				
+				do
 				{
-					if (mask == EV_TXEMPTY)
+					ResetEvent(overlappedRead.hEvent);
+
+					char tmp[1];
+					int size = sizeof(tmp);
+					memset(tmp, 0, size);
+					
+					if (!ReadFile(comPort, tmp, size, &bytesRead, &overlappedRead))
 					{
-						ResetEvent(overlapped.hEvent);
-						canContinue;
+						stopped = true;
+						break;
 					}
-
-				}
-
-				//Read data here...
-				int i = 0;
-
-				This->m_serialBuffer.LockBuffer();
-
-				try
-				{
-					BOOL readReturn = false;
-
-					DWORD bytesRead = 0;
-					OVERLAPPED overlappedRead;
-					memset(&overlappedRead, 0, sizeof(overlappedRead));
-					overlappedRead.hEvent = CreateEvent(0, true, 0, 0);
-
-					do
+					
+					if (bytesRead > 0)
 					{
-						ResetEvent(overlappedRead.hEvent);
-						char tmp[1];
-
-						int size = sizeof(tmp);
-						memset(tmp, 0, size);
-
-						readReturn = ::ReadFile(This->m_comPort, tmp, size, &bytesRead, &overlappedRead);
-
-						if (!readReturn)
+						if (packetStarted)
 						{
-							canContinue = FALSE;
-							break;
+							serialBuffer += tmp;
+							bufferPointer++;
+
+							if (bufferPointer >= 256)
+							{
+								std::cout << "[SerialManager] Packet size exceeded buffer, packet dropped." << std::endl;
+								serialBuffer.erase();
+								packetStarted = false;
+								bufferPointer = 0;
+							}
+							else if (tmp[0] == '#')
+							{
+								receivedPacket = serialBuffer;
+								serialBuffer.erase();
+
+								bufferPointer = 0;
+								packetStarted = false;
+
+								//ProcessPacket(receivedPacket);
+							}
+							else if (tmp[0] == '^')
+							{
+								serialBuffer += tmp[0];
+								bufferPointer++;
+								packetStarted = true;
+							}
 						}
-						if (bytesRead > 0)
-						{
-							This->m_serialBuffer.AddData(tmp, bytesRead);
-							i += bytesRead;
-						}
+					}
+				} while (bytesRead > 0);
 
-					} while (bytesRead > 0);
-
-					CloseHandle(overlappedRead.hEvent);
-				}
-				catch (...)
-				{
-					assert(0);
-				}
-
-				//If not in start state, then flush queue
-				if (This->GetCurrentState() != SS_Started)
-				{
-					i = 0;
-					This->m_serialBuffer.Flush();
-				}
-
-				This->m_serialBuffer.UnLockBuffer();
-
-				if (i > 0)
-					This->SetDataReadEvent();
-
-				ResetEvent(overlapped.hEvent);
+				ResetEvent(overlappedRead.hEvent);
 			}
 			break;
-		}//switch
+		}
 	}
-
-	return 0;
 }
 
-HRESULT SerialManager::CanProcess()
+bool SerialManager::Write(const char* data, DWORD dwSize)
 {
-	switch (m_state)
-	{
-		case SS_Unknown:
-			assert(0);
-			return E_FAIL;
-		case SS_UnInitialised:
-			return E_FAIL;
-		case SS_Started:
-			return S_OK;
-		case SS_Init:
-		case SS_Stopped:
-			return E_FAIL;
-
-		default:
-			assert(0);
-	}
-
-	return false;
-}
-
-HRESULT SerialManager::Write(const char* data, DWORD dwSize)
-{
-	HRESULT success = CanProcess();
-
-	if (success != S_OK) return success;
-
 	int writeReturn = 0;
 
 	OVERLAPPED overlapped;
@@ -362,156 +272,61 @@ HRESULT SerialManager::Write(const char* data, DWORD dwSize)
 
 	DWORD bytesWritten = 0;
 
-	writeReturn = WriteFile(m_comPort, data, dwSize, &bytesWritten, &overlapped);
+	writeReturn = WriteFile(comPort, data, dwSize, &bytesWritten, &overlapped);
+
 	if (writeReturn == 0)
 		WaitForSingleObject(overlapped.hEvent, INFINITE);
 
 	CloseHandle(overlapped.hEvent);
-	std::string szData(data);
-
-	return S_OK;
+	return true;
 }
 
-HRESULT SerialManager::Read_Upto(std::string& data, char terminator, long* count, long timeOut)
+bool SerialManager::IsConnected()
 {
-	HRESULT success = CanProcess();
-	if (!success) return success;
-
-	try
-	{
-		std::string tmp;
-		tmp.erase();
-
-		long bytesRead;
-
-		bool found = m_serialBuffer.Read_Upto(tmp, terminator, bytesRead, m_dataRx);
-
-		if (found)
-			data = tmp;
-		else
-		{
-			long iRead = 0;
-			bool canContinue = true;
-
-			while (canContinue)
-			{
-				cout << "[SerialManager] Read_Upto () making blocking read call." << endl;
-				DWORD wait = ::WaitForSingleObject(m_dataRx, timeOut);
-
-				if (wait == WAIT_TIMEOUT)
-				{
-					data.erase();
-					success = E_FAIL;
-					return success;
-
-				}
-
-				bool found = m_serialBuffer.Read_Upto(tmp, terminator, bytesRead, m_dataRx);
-
-
-				if (found)
-				{
-					data = tmp;
-					return S_OK;
-				}
-
-			}
-		}
-	}
-	catch (...)
-	{
-		assert(0);
-	}
-	return success;
-
+	return isConnected;
 }
 
-HRESULT SerialManager::Read_N(std::string& data, long count, long  timeOut)
+void SerialManager::SendPoseMsg(float yaw, float pitch, float roll)
 {
-	HRESULT success = CanProcess();
+	double digiYaw, digiPitch;
+	std::stringstream ss;
+	string message;
 
-	if (FAILED(success))
-	{
-		assert(0);
-		return success;
-	}
+	digiYaw = yaw + 150.0;
 
-	try
-	{
+	if (digiYaw > 300)
+		digiYaw = 300;
 
-		std::string tmp;
-		tmp.erase();
+	if (digiYaw < 0)
+		digiYaw = 0;
 
+	digiPitch = pitch + 150.0;
 
-		int iLocal = m_serialBuffer.Read_N(tmp, count, m_dataRx);
+	digiYaw = round(digiYaw / DEGREES_TO_DIGI);
+	digiPitch = round(digiPitch / DEGREES_TO_DIGI);
 
-		if (iLocal == count)
-			data = tmp;
-		else
-		{
-			long iRead = 0;
-			int iRemaining = count - iLocal;
-			while (1)
-			{
-				DWORD wait = WaitForSingleObject(m_dataRx, timeOut);
+	ss << "^POSE," << digiYaw << ","<< digiPitch << "#";
 
-				if (wait == WAIT_TIMEOUT)
-				{
-					data.erase();
-					success = E_FAIL;
-					return success;
+	message = ss.str();
 
-				}
-
-				assert(wait == WAIT_OBJECT_0);
-
-
-				iRead = m_serialBuffer.Read_N(tmp, iRemaining, m_dataRx);
-				iRemaining -= iRead;
-
-
-				if (iRemaining == 0)
-				{
-					data = tmp;
-					return S_OK;
-				}
-			}
-		}
-	}
-	catch (...)
-	{
-		assert(0);
-	}
-	return success;
-
+	Write(message.c_str(), message.size());
 }
-/*-----------------------------------------------------------------------
--- Reads all the data that is available in the local buffer..
-does NOT make any blocking calls in case the local buffer is empty
------------------------------------------------------------------------*/
 
-HRESULT SerialManager::ReadAvailable(std::string& data)
+void SerialManager::SendConfMsg(int interpolation)
 {
+	std::stringstream ss;
+	string message;
 
-	HRESULT success = CanProcess();
-	if (FAILED(success)) return success;
-	try
-	{
-		std::string szTemp;
-		bool readReturn = m_serialBuffer.Read_Available(szTemp, m_dataRx);
+	ss << "^CONF," << interpolation << "#";
 
-		data = szTemp;
-	}
-	catch (...)
-	{
-		assert(0);
-		success = E_FAIL;
-	}
-	return success;
+	message = ss.str();
 
+	Write(message.c_str(), message.size());
 }
 
+void SerialManager::SendRstMsg()
+{
+	string message = "^RST,#";
 
-
-
-
+	Write(message.c_str(), message.size());
+}

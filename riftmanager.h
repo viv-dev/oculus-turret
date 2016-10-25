@@ -31,13 +31,11 @@ public:
 
 	void EndFrame();
 
-	void DestroyRift();
+	void Destroy();
 
 	ovrSizei GetResolution();
 	ovrSizei GetBufferSize();
 	float GetFoV();
-	
-	
 	void GetPose(float &yaw, float &pitch, float &roll);
 	void RecenterPose();
 
@@ -79,7 +77,7 @@ private:
 	// Used for tracking prediction
 	double sensorSampleTime;
 
-	// mirror texture used to render HMD view to OpenGL window
+	// Mirror texture and FBO used to render HMD view to OpenGL window
 	ovrGLTexture *mirrorTexture;
 	GLuint mirrorFBO;
 	
